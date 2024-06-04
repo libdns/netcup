@@ -24,7 +24,7 @@ func toLibdnsRecords(netcupRecords []dnsRecord, ttl int64) []libdns.Record {
 			Name:     record.HostName,
 			Value:    record.Destination,
 			TTL:      time.Duration(ttl * int64(time.Second)),
-			Priority: record.Priority,
+			Priority: uint(record.Priority),
 		}
 		libdnsRecords = append(libdnsRecords, libdnsRecord)
 	}
@@ -40,7 +40,7 @@ func toNetcupRecords(libnsRecords []libdns.Record) []dnsRecord {
 			HostName:    record.Name,
 			RecType:     record.Type,
 			Destination: record.Value,
-			Priority:    record.Priority,
+			Priority:    int(record.Priority),
 		}
 		netcupRecords = append(netcupRecords, netcupRecord)
 	}
