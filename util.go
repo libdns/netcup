@@ -14,18 +14,32 @@ func unFQDN(fqdn string) string {
 	return strings.TrimSuffix(fqdn, ".")
 }
 
+// Convert single netcup record to libdns record.
+func toLibdnsRecord(netcupRecord dnsRecord, ttl int64) libdns.Record {
+	switch netcupRecord.RecType {
+	case "MX":
+		// MX is the only one where the preference/priority is set dedicated on netcup api side
+		return libdns.MX{
+			Name:       netcupRecord.HostName,
+			Target:     netcupRecord.Destination,
+			Preference: uint16(netcupRecord.Priority),
+			TTL:        time.Duration(ttl * int64(time.Second)),
+		}
+	default:
+		return libdns.RR{
+			Name: netcupRecord.HostName,
+			Type: netcupRecord.RecType,
+			Data: netcupRecord.Destination,
+			TTL:  time.Duration(ttl * int64(time.Second)),
+		}
+	}
+}
+
 // Converts netcup records to libdns records. Since the netcup records don't have individual TTLs, the given TTL is used for all libdns records.
 func toLibdnsRecords(netcupRecords []dnsRecord, ttl int64) []libdns.Record {
 	var libdnsRecords []libdns.Record
 	for _, record := range netcupRecords {
-		libdnsRecord := libdns.Record{
-			ID:       record.ID,
-			Type:     record.RecType,
-			Name:     record.HostName,
-			Value:    record.Destination,
-			TTL:      time.Duration(ttl * int64(time.Second)),
-			Priority: uint(record.Priority),
-		}
+		libdnsRecord := toLibdnsRecord(record, ttl)
 		libdnsRecords = append(libdnsRecords, libdnsRecord)
 	}
 	return libdnsRecords
@@ -35,12 +49,26 @@ func toLibdnsRecords(netcupRecords []dnsRecord, ttl int64) []libdns.Record {
 func toNetcupRecords(libnsRecords []libdns.Record) []dnsRecord {
 	var netcupRecords []dnsRecord
 	for _, record := range libnsRecords {
+		// Make sure we have an RR record at hand
+		rr := record.RR()
+
+		// Parse the priority out of the RR record, when required
+		priority := 0
+		if rr.Type == "MX" {
+			libdnsRecord, _ := rr.Parse()
+			mxRecord, ok := libdnsRecord.(libdns.MX)
+			if ok {
+				priority = int(mxRecord.Preference)
+			}
+		}
+
+		// NOTE: We loose the ID during conversion
 		netcupRecord := dnsRecord{
-			ID:          record.ID,
-			HostName:    record.Name,
-			RecType:     record.Type,
-			Destination: record.Value,
-			Priority:    int(record.Priority),
+			ID:          "",
+			HostName:    rr.Name,
+			RecType:     rr.Type,
+			Destination: rr.Data,
+			Priority:    priority,
 		}
 		netcupRecords = append(netcupRecords, netcupRecord)
 	}
@@ -156,4 +184,14 @@ func getRecordsToDelete(deleteRecords []dnsRecord, existingRecords []dnsRecord) 
 		}
 	}
 	return recordsToDelete
+}
+
+// Do a full comparison of two records.
+func rrEqualsRR(a, b libdns.RR) bool {
+	return a.Name == b.Name && a.Type == b.Type && a.TTL.String() == b.TTL.String() && a.Data == b.Data
+}
+
+// Compare two records by their ID (Name and Type).
+func rrMatchID(a, b libdns.RR) bool {
+	return a.Name == b.Name && a.Type == b.Type
 }

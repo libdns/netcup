@@ -17,10 +17,10 @@ var (
 	apiPassword    = ""
 	zone           = ""
 	testRecords    = []libdns.Record{
-		{
-			Type:  "TXT",
-			Name:  "test",
-			Value: "testval1",
+		libdns.RR{
+			Type: "TXT",
+			Name: "test",
+			Data: "testval1",
 		},
 	}
 )
@@ -78,13 +78,14 @@ func TestProvider_GetRecords(t *testing.T) {
 	for _, setupRecord := range setupRecords {
 		var foundRecord *libdns.Record
 		for _, record := range records {
-			if record.ID == setupRecord.ID {
+			// NOTE: Here we can do a full equals
+			if rrEqualsRR(setupRecord.RR(), record.RR()) {
 				foundRecord = &setupRecord
 			}
 		}
 
 		if foundRecord == nil {
-			t.Fatalf("Record with ID %v not found", setupRecord.ID)
+			t.Fatalf("Record %v not found", setupRecord)
 		}
 	}
 }
@@ -104,10 +105,12 @@ func TestProvider_SetRecords(t *testing.T) {
 	var updateRecords []libdns.Record
 	// test, if records without IDs update the correct records
 	for _, record := range testRecords {
-		updateRecords = append(updateRecords, libdns.Record{
-			Type:  record.Type,
-			Name:  record.Name,
-			Value: record.Value + "edit",
+		rr := record.RR()
+
+		updateRecords = append(updateRecords, libdns.RR{
+			Type: rr.Type,
+			Name: rr.Name,
+			Data: rr.Data + "edit",
 		})
 	}
 	records, err := p.SetRecords(context.TODO(), zone, updateRecords)
@@ -122,13 +125,15 @@ func TestProvider_SetRecords(t *testing.T) {
 	for _, setupRecord := range setupRecords {
 		var foundRecord *libdns.Record
 		for _, record := range records {
-			if record.ID == setupRecord.ID {
+			// NOTE: Due to updating the record value, we can only compare the ID.
+			// As we don't have an ID, we only compare Name and Type.
+			if rrMatchID(record.RR(), setupRecord.RR()) {
 				foundRecord = &setupRecord
 			}
 		}
 
 		if foundRecord == nil {
-			t.Fatalf("Record with ID %v not found", setupRecord.ID)
+			t.Fatalf("Record %v not found", setupRecord)
 		}
 	}
 }
