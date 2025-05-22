@@ -17,10 +17,9 @@ var (
 	apiPassword    = ""
 	zone           = ""
 	testRecords    = []libdns.Record{
-		libdns.RR{
-			Type: "TXT",
+		libdns.TXT{
 			Name: "test",
-			Data: "testval1",
+			Text: "testval1",
 		},
 	}
 )

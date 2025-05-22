@@ -15,7 +15,7 @@ func unFQDN(fqdn string) string {
 }
 
 // Convert single netcup record to libdns record.
-func toLibdnsRecord(netcupRecord dnsRecord, ttl int64) libdns.Record {
+func toLibdnsRecord(netcupRecord dnsRecord, ttl int64) (libdns.Record, error) {
 	switch netcupRecord.RecType {
 	case "MX":
 		// MX is the only one where the preference/priority is set dedicated on netcup api side
@@ -24,25 +24,35 @@ func toLibdnsRecord(netcupRecord dnsRecord, ttl int64) libdns.Record {
 			Target:     netcupRecord.Destination,
 			Preference: uint16(netcupRecord.Priority),
 			TTL:        time.Duration(ttl * int64(time.Second)),
-		}
+		}, nil
 	default:
-		return libdns.RR{
-			Name: netcupRecord.HostName,
-			Type: netcupRecord.RecType,
-			Data: netcupRecord.Destination,
-			TTL:  time.Duration(ttl * int64(time.Second)),
+		{
+			rr := libdns.RR{
+				Name: netcupRecord.HostName,
+				Type: netcupRecord.RecType,
+				Data: netcupRecord.Destination,
+				TTL:  time.Duration(ttl * int64(time.Second)),
+			}
+
+			// Make sure we return a native entry type instead of RR type
+			return rr.Parse()
 		}
 	}
 }
 
 // Converts netcup records to libdns records. Since the netcup records don't have individual TTLs, the given TTL is used for all libdns records.
-func toLibdnsRecords(netcupRecords []dnsRecord, ttl int64) []libdns.Record {
+func toLibdnsRecords(netcupRecords []dnsRecord, ttl int64) ([]libdns.Record, error) {
 	var libdnsRecords []libdns.Record
 	for _, record := range netcupRecords {
-		libdnsRecord := toLibdnsRecord(record, ttl)
+		libdnsRecord, err := toLibdnsRecord(record, ttl)
+		// NOTE: Aborting here on a single invalid record is the best option.
+		// Additionally, netcup already validates DNS entries upon saving, so this is very unlikely.
+		if err != nil {
+			return []libdns.Record{}, err
+		}
 		libdnsRecords = append(libdnsRecords, libdnsRecord)
 	}
-	return libdnsRecords
+	return libdnsRecords, nil
 }
 
 // Converts libdns records to netcup records.
@@ -53,6 +63,7 @@ func toNetcupRecords(libnsRecords []libdns.Record) []dnsRecord {
 		rr := record.RR()
 
 		// Parse the priority out of the RR record, when required
+		// NOTE: This is not the cleanest solution, but it works reliably
 		priority := 0
 		if rr.Type == "MX" {
 			libdnsRecord, _ := rr.Parse()
